@@ -24,8 +24,16 @@ MONTH_NAMES = {
     "12": "Dec."
 }
 
+# Regex supports:
+# 1. IMG_YYYYMMDD_..., VID_YYYYMMDD_..., PXL_YYYYMMDD_..., PHOTO_YYYYMMDD_...
+# 2. Screenshot_YYYYMMDD-..., Screenshot_YYYYMMDD_...
+# 3. IMG-YYYYMMDD-WA..., VID-YYYYMMDD-WA...
+# 4. Standalone YYYYMMDD_... or YYYY-MM-DD_...
 FILENAME_PATTERN = re.compile(
-    r'^(?P<prefix>IMG|VID|PXL|PHOTO|VIDEO)?_?(?P<year>\d{4})(?P<month>\d{2})(?P<day>\d{2})',
+    r'^(?P<prefix>IMG|VID|PXL|PHOTO|VIDEO|Screenshot)?[_\-]?'
+    r'(?P<year>\d{4})[_\-]?'
+    r'(?P<month>\d{2})[_\-]?'
+    r'(?P<day>\d{2})',
     re.IGNORECASE
 )
 
@@ -48,15 +56,17 @@ def get_folder_metadata(filename: str, extension: str, year_dir: Path = None):
 
     year = match.group('year')
     month = match.group('month')
+    prefix = (match.group('prefix') or '').upper()
     
     if month not in MONTH_NAMES:
         return None
 
+    # Check for existing folder matching "MM-00-YYYY*"
     month_folder_name = None
     if year_dir and year_dir.exists():
-        prefix = f"{month}-00-{year}"
+        target_prefix = f"{month}-00-{year}"
         for existing in year_dir.iterdir():
-            if existing.is_dir() and existing.name.startswith(prefix):
+            if existing.is_dir() and existing.name.startswith(target_prefix):
                 month_folder_name = existing.name
                 break
 
@@ -65,9 +75,7 @@ def get_folder_metadata(filename: str, extension: str, year_dir: Path = None):
         month_folder_name = f"{month}-00-{year} ({month_label} {year})"
     
     ext = extension.lower()
-    if ext in IMAGE_EXTENSIONS or filename.upper().startswith("IMG"):
-        sub_folder = "Pics"
-    elif ext in VIDEO_EXTENSIONS or filename.upper().startswith("VID"):
+    if ext in VIDEO_EXTENSIONS or prefix in {"VID", "VIDEO"}:
         sub_folder = "Vids"
     else:
         sub_folder = "Pics"
@@ -83,9 +91,11 @@ def process_media(source_dir: Path, target_dir: Path, dry_run: bool = False, cop
     action_fn = shutil.copy2 if copy_mode else shutil.move
     
     processed_count = 0
+    conflict_count = 0
     skipped_count = 0
 
-    for file_path in source_dir.iterdir():
+    # Recursive scan to process subfolders within the staging root
+    for file_path in source_dir.rglob('*'):
         if file_path.is_dir() or file_path.name.startswith('.'):
             continue
 
@@ -95,7 +105,7 @@ def process_media(source_dir: Path, target_dir: Path, dry_run: bool = False, cop
         metadata = get_folder_metadata(file_path.stem, file_path.suffix, year_dir=year_dir)
         
         if not metadata:
-            print(f"[SKIP] Unmatched filename format: {file_path.name}")
+            print(f"[SKIP] Unmatched format: {file_path.name}")
             skipped_count += 1
             continue
 
@@ -110,6 +120,7 @@ def process_media(source_dir: Path, target_dir: Path, dry_run: bool = False, cop
             
             if destination_path.exists():
                 print(f"[!] Conflict: {destination_path.name} already exists in destination. Skipping.")
+                conflict_count += 1
                 continue
                 
             action_fn(file_path, destination_path)
@@ -118,7 +129,8 @@ def process_media(source_dir: Path, target_dir: Path, dry_run: bool = False, cop
 
     print("\n--- Summary ---")
     print(f"Processed: {processed_count} files")
-    print(f"Skipped:   {skipped_count} files")
+    print(f"Conflicts: {conflict_count} files (skipped to prevent overwrite)")
+    print(f"Unmatched: {skipped_count} files (skipped format)")
 
 def main():
     config = load_config()
