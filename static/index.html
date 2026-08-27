@@ -5,83 +5,144 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Project Time Capsule</title>
     <link rel="stylesheet" href="/static/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="container">
-        <!-- Header -->
-        <header class="header">
-            <div>
-                <h1>Project Time Capsule</h1>
-                <p class="subtitle">Automated Mobile Media Sorting & Archive Pipeline</p>
+    <div class="app-layout">
+        <!-- Top Navbar -->
+        <header class="navbar">
+            <div class="brand">
+                <div>
+                    <h1>Project Time Capsule</h1>
+                    <span class="version-tag">v2.1 • Media Pipeline</span>
+                </div>
             </div>
-            <div class="status-badge" id="appStatus">Standing By</div>
+            <div class="nav-status">
+                <div class="status-indicator">
+                    <span class="pulse-dot" id="statusDot"></span>
+                    <span id="appStatus">Standing By</span>
+                </div>
+            </div>
         </header>
 
-        <!-- Directory Configuration Card -->
-        <section class="card">
-            <h2>Directory Routing</h2>
-            <div class="input-group">
-                <label>Source Inbox (Phone Dump)</label>
-                <input type="text" id="sourcePath" placeholder="D:/Unsorted">
-            </div>
-            <div class="input-group">
-                <label>Target Vault (Archive Root)</label>
-                <input type="text" id="targetPath" placeholder="D:/00 Phone Captures">
-            </div>
-            <button class="btn btn-secondary" id="saveConfigBtn">Save Directory Settings</button>
-        </section>
+        <!-- Main 2-Column Dashboard -->
+        <main class="dashboard-grid">
+            <!-- Left Panel: Configuration & Actions -->
+            <section class="control-panel">
+                <div class="panel-card">
+                    <div class="card-header">
+                        <h2>Directory Setup</h2>
+                        <span class="auto-save-pill" id="autoSaveIndicator">Synced</span>
+                    </div>
 
-        <!-- Controls Card -->
-        <section class="card">
-            <h2>Execution Parameters</h2>
-            <div class="switches-row">
-                <label class="switch-label">
-                    <input type="checkbox" id="dryRunToggle" checked>
-                    <span>Safe Dry-Run (Preview only, no file movement)</span>
-                </label>
-                <label class="switch-label">
-                    <input type="checkbox" id="copyModeToggle">
-                    <span>Copy Mode (Keep originals in source)</span>
-                </label>
-            </div>
-            <div class="action-row">
-                <button class="btn btn-primary" id="runPipelineBtn">Start Media Sorting</button>
-            </div>
-        </section>
+                    <!-- Source Input -->
+                    <div class="field-group">
+                        <div class="field-label-row">
+                            <div>
+                                <label for="sourcePath">Unsorted Media Folder</label>
+                                <span class="field-hint">Feed your raw photo/video dumps here</span>
+                            </div>
+                            <span class="path-badge" id="sourceBadge">Checking...</span>
+                        </div>
+                        <div class="input-with-action">
+                            <input type="text" id="sourcePath" placeholder="Select folder containing raw dumps..." autocomplete="off">
+                            <button class="btn-browse" id="browseSourceBtn">Browse</button>
+                        </div>
+                    </div>
 
-        <!-- Metrics & Telemetry Grid -->
-        <section class="metrics-grid">
-            <div class="metric-card">
-                <span class="metric-val" id="metricProcessed">0</span>
-                <span class="metric-label">Sorted</span>
-            </div>
-            <div class="metric-card">
-                <span class="metric-val" id="metricDuplicates">0</span>
-                <span class="metric-label">Exact Twins Skipped</span>
-            </div>
-            <div class="metric-card">
-                <span class="metric-val" id="metricConflicts">0</span>
-                <span class="metric-label">Name Collisions Renamed</span>
-            </div>
-            <div class="metric-card">
-                <span class="metric-val" id="metricSkipped">0</span>
-                <span class="metric-label">Unmatched</span>
-            </div>
-        </section>
+                    <!-- Target Input -->
+                    <div class="field-group">
+                        <div class="field-label-row">
+                            <div>
+                                <label for="targetPath">Organized Archive Destination</label>
+                                <span class="field-hint">Chronological folders will be built here</span>
+                            </div>
+                            <span class="path-badge" id="targetBadge">Checking...</span>
+                        </div>
+                        <div class="input-with-action">
+                            <input type="text" id="targetPath" placeholder="Select main archive destination..." autocomplete="off">
+                            <button class="btn-browse" id="browseTargetBtn">Browse</button>
+                        </div>
+                    </div>
+                </div>
 
-        <!-- Progress Bar & Live Activity Stream -->
-        <section class="card console-card">
-            <div class="console-header">
-                <h2>Real-Time Sorting Activity</h2>
-                <span id="progressPercent">0%</span>
-            </div>
-            <div class="progress-bar-bg">
-                <div class="progress-bar-fill" id="progressBar"></div>
-            </div>
-            <div class="console-box" id="consoleOutput">
-                <div class="log-entry info">[System] Ready. Configure paths and start sorting.</div>
-            </div>
-        </section>
+                <!-- Execution Parameters Card -->
+                <div class="panel-card">
+                    <div class="card-header">
+                        <h2>Execution Parameters</h2>
+                    </div>
+                    
+                    <div class="toggle-list">
+                        <label class="toggle-card">
+                            <input type="checkbox" id="dryRunToggle" checked>
+                            <div class="toggle-content">
+                                <span class="toggle-title">Safe Preview Mode (Dry-Run)</span>
+                                <span class="toggle-desc">Simulates the folder structure without relocating files.</span>
+                            </div>
+                        </label>
+
+                        <label class="toggle-card">
+                            <input type="checkbox" id="copyModeToggle">
+                            <div class="toggle-content">
+                                <span class="toggle-title">Copy Mode</span>
+                                <span class="toggle-desc">Duplicates files to the archive while keeping originals in source.</span>
+                            </div>
+                        </label>
+                    </div>
+
+                    <button class="btn btn-action preview-mode" id="runPipelineBtn">
+                        <span class="btn-text">Run Safe Preview</span>
+                    </button>
+                </div>
+            </section>
+
+            <!-- Right Panel: Telemetry, Metrics & Live Stream -->
+            <section class="telemetry-panel">
+                <!-- Metrics Bar -->
+                <div class="metrics-grid">
+                    <div class="metric-card" style="--accent: #3B82F6">
+                        <span class="metric-val" id="metricProcessed">0</span>
+                        <span class="metric-label">Sorted Media</span>
+                    </div>
+                    <div class="metric-card" style="--accent: #F59E0B">
+                        <span class="metric-val" id="metricDuplicates">0</span>
+                        <span class="metric-label">Exact Twins Skipped</span>
+                    </div>
+                    <div class="metric-card" style="--accent: #8B5CF6">
+                        <span class="metric-val" id="metricConflicts">0</span>
+                        <span class="metric-label">Name Collisions Renamed</span>
+                    </div>
+                    <div class="metric-card" style="--accent: #EF4444">
+                        <span class="metric-val" id="metricSkipped">0</span>
+                        <span class="metric-label">Unmatched</span>
+                    </div>
+                </div>
+
+                <!-- Live Feed Card -->
+                <div class="panel-card feed-card">
+                    <div class="card-header">
+                        <h2>Sorting Activity Log</h2>
+                        <div class="progress-info">
+                            <span id="progressText">0 / 0 Files</span>
+                            <span class="progress-badge" id="progressPercent">0%</span>
+                        </div>
+                    </div>
+
+                    <div class="progress-track">
+                        <div class="progress-bar" id="progressBar"></div>
+                    </div>
+
+                    <div class="activity-feed" id="consoleOutput">
+                        <div class="feed-item system">
+                            <span class="feed-tag">INFO</span>
+                            <span class="feed-text">Ready. Configure directories and start preview or sort.</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
     </div>
 
     <script src="/static/script.js"></script>

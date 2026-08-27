@@ -1,33 +1,53 @@
 document.addEventListener('DOMContentLoaded', async () => {
     const sourceInput = document.getElementById('sourcePath');
     const targetInput = document.getElementById('targetPath');
-    const saveBtn = document.getElementById('saveConfigBtn');
-    const runBtn = document.getElementById('runPipelineBtn');
+    const sourceBadge = document.getElementById('sourceBadge');
+    const targetBadge = document.getElementById('targetBadge');
+    const browseSrcBtn = document.getElementById('browseSourceBtn');
+    const browseTgtBtn = document.getElementById('browseTargetBtn');
+    const autoSaveInd = document.getElementById('autoSaveIndicator');
+
     const dryRunToggle = document.getElementById('dryRunToggle');
     const copyToggle = document.getElementById('copyModeToggle');
+    const runBtn = document.getElementById('runPipelineBtn');
+    const statusDot = document.getElementById('statusDot');
     const appStatus = document.getElementById('appStatus');
-    const consoleBox = document.getElementById('consoleOutput');
+
     const progressBar = document.getElementById('progressBar');
     const progressPercent = document.getElementById('progressPercent');
+    const progressText = document.getElementById('progressText');
+    const activityFeed = document.getElementById('consoleOutput');
 
-    const metricProcessed = document.getElementById('metricProcessed');
-    const metricDuplicates = document.getElementById('metricDuplicates');
-    const metricConflicts = document.getElementById('metricConflicts');
-    const metricSkipped = document.getElementById('metricSkipped');
+    const mProcessed = document.getElementById('metricProcessed');
+    const mDuplicates = document.getElementById('metricDuplicates');
+    const mConflicts = document.getElementById('metricConflicts');
+    const mSkipped = document.getElementById('metricSkipped');
 
-    // 1. Fetch saved config on startup
-    try {
-        const res = await fetch('/api/config');
-        const config = await res.json();
-        sourceInput.value = config.source_path || '';
-        targetInput.value = config.target_path || '';
-    } catch (e) {
-        console.error("Failed to load config", e);
+    async function validatePath(input, badge) {
+        if (!input.value.trim()) {
+            badge.innerText = 'Empty';
+            badge.className = 'path-badge';
+            return;
+        }
+        try {
+            const res = await fetch(`/api/validate-path?path=${encodeURIComponent(input.value)}`);
+            const data = await res.json();
+            if (data.exists) {
+                badge.innerText = `Valid (${data.file_count} files found)`;
+                badge.className = 'path-badge valid';
+            } else {
+                badge.innerText = 'Path not found';
+                badge.className = 'path-badge invalid';
+            }
+        } catch (e) {
+            badge.innerText = 'Offline';
+            badge.className = 'path-badge';
+        }
     }
 
-    // 2. Save Config Button
-    saveBtn.addEventListener('click', async () => {
-        saveBtn.innerText = "Saving...";
+    async function autoSaveConfig() {
+        autoSaveInd.innerText = "Syncing...";
+        autoSaveInd.style.color = "var(--accent-amber)";
         await fetch('/api/config', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -36,67 +56,120 @@ document.addEventListener('DOMContentLoaded', async () => {
                 target_path: targetInput.value
             })
         });
-        saveBtn.innerText = "Settings Saved!";
-        setTimeout(() => saveBtn.innerText = "Save Directory Settings", 2000);
-    });
-
-    function appendLog(status, text) {
-        const div = document.createElement('div');
-        div.className = `log-entry ${status}`;
-        div.innerText = `[${status}] ${text}`;
-        consoleBox.appendChild(div);
-        consoleBox.scrollTop = consoleBox.scrollHeight;
+        autoSaveInd.innerText = "Synced";
+        autoSaveInd.style.color = "var(--accent-green)";
     }
 
-    // 3. Start Live Stream Sorting
+    try {
+        const res = await fetch('/api/config');
+        const config = await res.json();
+        sourceInput.value = config.source_path || '';
+        targetInput.value = config.target_path || '';
+        validatePath(sourceInput, sourceBadge);
+        validatePath(targetInput, targetBadge);
+    } catch (e) {
+        console.error("Config fetch error", e);
+    }
+
+    browseSrcBtn.addEventListener('click', async () => {
+        const res = await fetch(`/api/browse?initial_dir=${encodeURIComponent(sourceInput.value)}`);
+        const data = await res.json();
+        if (data.path) {
+            sourceInput.value = data.path;
+            validatePath(sourceInput, sourceBadge);
+            autoSaveConfig();
+        }
+    });
+
+    browseTgtBtn.addEventListener('click', async () => {
+        const res = await fetch(`/api/browse?initial_dir=${encodeURIComponent(targetInput.value)}`);
+        const data = await res.json();
+        if (data.path) {
+            targetInput.value = data.path;
+            validatePath(targetInput, targetBadge);
+            autoSaveConfig();
+        }
+    });
+
+    sourceInput.addEventListener('change', () => { validatePath(sourceInput, sourceBadge); autoSaveConfig(); });
+    targetInput.addEventListener('change', () => { validatePath(targetInput, targetBadge); autoSaveConfig(); });
+
+    dryRunToggle.addEventListener('change', () => {
+        if (dryRunToggle.checked) {
+            runBtn.className = "btn btn-action preview-mode";
+            runBtn.innerHTML = `<span class="btn-text">Run Safe Preview</span>`;
+        } else {
+            runBtn.className = "btn btn-action live-mode";
+            runBtn.innerHTML = `<span class="btn-text">Start Media Sorting</span>`;
+        }
+    });
+
+    function appendFeed(status, text) {
+        const div = document.createElement('div');
+        div.className = `feed-item ${status}`;
+        div.innerHTML = `<span class="feed-tag">${status}</span> <span class="feed-text">${text}</span>`;
+        activityFeed.appendChild(div);
+        activityFeed.scrollTop = activityFeed.scrollHeight;
+    }
+
     runBtn.addEventListener('click', () => {
+        if (!dryRunToggle.checked) {
+            const confirmRun = confirm("You are about to execute a live sort. Files will be organized into your destination archive. Proceed?");
+            if (!confirmRun) return;
+        }
+
         runBtn.disabled = true;
-        appStatus.innerText = "Sorting";
-        appStatus.className = "status-badge running";
-        consoleBox.innerHTML = '';
+        appStatus.innerText = "Processing";
+        statusDot.className = "pulse-dot running";
+        activityFeed.innerHTML = '';
         progressBar.style.width = '0%';
         progressPercent.innerText = '0%';
+        progressText.innerText = '0 / 0 Files';
 
         const dryRun = dryRunToggle.checked;
         const copyMode = copyToggle.checked;
         const url = `/api/stream?dry_run=${dryRun}&copy_mode=${copyMode}`;
-
         const eventSource = new EventSource(url);
 
         eventSource.onmessage = (e) => {
             const data = JSON.parse(e.data);
 
             if (data.type === "start") {
-                appendLog("INFO", `Found ${data.total} media files to inspect.`);
+                progressText.innerText = `0 / ${data.total} Files`;
+                appendFeed("SYSTEM", `Scanning complete. Found ${data.total} media captures.`);
             } else if (data.type === "progress") {
                 const pct = Math.round((data.index / data.total) * 100);
                 progressBar.style.width = `${pct}%`;
                 progressPercent.innerText = `${pct}%`;
-                appendLog(data.status, `${data.file} -> ${data.target}`);
+                progressText.innerText = `${data.index} / ${data.total} Files`;
+                appendFeed(data.status, `${data.file} -> ${data.target}`);
             } else if (data.type === "done") {
                 progressBar.style.width = '100%';
                 progressPercent.innerText = '100%';
 
-                metricProcessed.innerText = data.summary.processed;
-                metricDuplicates.innerText = data.summary.duplicates;
-                metricConflicts.innerText = data.summary.conflicts;
-                metricSkipped.innerText = data.summary.skipped;
+                mProcessed.innerText = data.summary.processed;
+                mDuplicates.innerText = data.summary.duplicates;
+                mConflicts.innerText = data.summary.conflicts;
+                mSkipped.innerText = data.summary.skipped;
 
-                appendLog("INFO", "Media sorting run complete.");
+                appendFeed("SYSTEM", "Pipeline execution complete.");
                 appStatus.innerText = "Completed";
-                appStatus.className = "status-badge done";
+                statusDot.className = "pulse-dot completed";
                 runBtn.disabled = false;
                 eventSource.close();
+                validatePath(sourceInput, sourceBadge);
+                validatePath(targetInput, targetBadge);
             } else if (data.type === "error") {
-                appendLog("ERROR", data.message);
+                appendFeed("SKIP", data.message);
                 appStatus.innerText = "Error";
+                statusDot.className = "pulse-dot";
                 runBtn.disabled = false;
                 eventSource.close();
             }
         };
 
         eventSource.onerror = () => {
-            appendLog("ERROR", "Event stream connection lost.");
+            appendFeed("SKIP", "Connection to stream interrupted.");
             runBtn.disabled = false;
             eventSource.close();
         };
