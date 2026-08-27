@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project Time Capsule</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div>
+                <h1>Project Time Capsule</h1>
+                <p class="subtitle">Automated Mobile Media Sorting & Archive Pipeline</p>
+            </div>
+            <div class="status-badge" id="appStatus">Standing By</div>
+        </header>
+
+        <!-- Directory Configuration Card -->
+        <section class="card">
+            <h2>Directory Routing</h2>
+            <div class="input-group">
+                <label>Source Inbox (Phone Dump)</label>
+                <input type="text" id="sourcePath" placeholder="D:/Unsorted">
+            </div>
+            <div class="input-group">
+                <label>Target Vault (Archive Root)</label>
+                <input type="text" id="targetPath" placeholder="D:/00 Phone Captures">
+            </div>
+            <button class="btn btn-secondary" id="saveConfigBtn">Save Directory Settings</button>
+        </section>
+
+        <!-- Controls Card -->
+        <section class="card">
+            <h2>Execution Parameters</h2>
+            <div class="switches-row">
+                <label class="switch-label">
+                    <input type="checkbox" id="dryRunToggle" checked>
+                    <span>Safe Dry-Run (Preview only, no file movement)</span>
+                </label>
+                <label class="switch-label">
+                    <input type="checkbox" id="copyModeToggle">
+                    <span>Copy Mode (Keep originals in source)</span>
+                </label>
+            </div>
+            <div class="action-row">
+                <button class="btn btn-primary" id="runPipelineBtn">Start Media Sorting</button>
+            </div>
+        </section>
+
+        <!-- Metrics & Telemetry Grid -->
+        <section class="metrics-grid">
+            <div class="metric-card">
+                <span class="metric-val" id="metricProcessed">0</span>
+                <span class="metric-label">Sorted</span>
+            </div>
+            <div class="metric-card">
+                <span class="metric-val" id="metricDuplicates">0</span>
+                <span class="metric-label">Exact Twins Skipped</span>
+            </div>
+            <div class="metric-card">
+                <span class="metric-val" id="metricConflicts">0</span>
+                <span class="metric-label">Name Collisions Renamed</span>
+            </div>
+            <div class="metric-card">
+                <span class="metric-val" id="metricSkipped">0</span>
+                <span class="metric-label">Unmatched</span>
+            </div>
+        </section>
+
+        <!-- Progress Bar & Live Activity Stream -->
+        <section class="card console-card">
+            <div class="console-header">
+                <h2>Real-Time Sorting Activity</h2>
+                <span id="progressPercent">0%</span>
+            </div>
+            <div class="progress-bar-bg">
+                <div class="progress-bar-fill" id="progressBar"></div>
+            </div>
+            <div class="console-box" id="consoleOutput">
+                <div class="log-entry info">[System] Ready. Configure paths and start sorting.</div>
+            </div>
+        </section>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>
