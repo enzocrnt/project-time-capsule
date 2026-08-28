@@ -12,5 +12,8 @@ env/
 .DS_Store
 Thumbs.db
 
-# User specific configurations
+# User specific configurations & Runtime State
+config.json
 config.local.json
+last_run.json
+*.log

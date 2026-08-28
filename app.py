@@ -7,6 +7,7 @@ import webbrowser
 import tkinter as tk
 from tkinter import filedialog
 from pathlib import Path
+from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -27,8 +28,10 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 active_sort_task = {"abort": False}
 
 class ConfigUpdate(BaseModel):
+    profile_key: str
     source_path: str
     target_path: str
+    profile_name: Optional[str] = None
 
 class OpenFolderRequest(BaseModel):
     path: str
@@ -46,7 +49,7 @@ async def get_config():
 async def update_config(payload: ConfigUpdate):
     src = str(Path(payload.source_path).resolve()) if payload.source_path.strip() else ""
     tgt = str(Path(payload.target_path).resolve()) if payload.target_path.strip() else ""
-    updated = organize.save_config(src, tgt)
+    updated = organize.save_active_profile(payload.profile_key, src, tgt, payload.profile_name)
     return {"status": "ok", "config": updated}
 
 @app.get("/api/browse")
@@ -100,6 +103,7 @@ async def get_incoming_files(path: str, limit: int = 20):
                         "name": file,
                         "rel_path": rel_p,
                         "type": "video" if is_vid else "image",
+                        "ext": ext.replace(".", "").upper(),
                         "size_mb": size_mb
                     })
                 if len(media_files) >= limit:
@@ -151,6 +155,7 @@ async def get_undo_status():
         return {
             "can_undo": True,
             "count": len(history["records"]),
+            "profile": history.get("profile", "unknown"),
             "timestamp": history.get("timestamp")
         }
     return {"can_undo": False, "count": 0}
@@ -166,14 +171,15 @@ async def abort_sorting():
     return {"status": "abort_requested"}
 
 @app.get("/api/stream")
-async def stream_sorting(dry_run: bool = True, copy_mode: bool = False):
+async def stream_sorting(dry_run: bool = True, copy_mode: bool = False, profile: str = "mobile"):
     config = organize.load_config()
-    source = Path(config.get("source_path", "")).resolve()
-    target = Path(config.get("target_path", "")).resolve()
+    profile_data = config.get("profiles", {}).get(profile, {})
+    source = Path(profile_data.get("source_path", "")).resolve()
+    target = Path(profile_data.get("target_path", "")).resolve()
     active_sort_task["abort"] = False
 
     async def event_generator():
-        for update in organize.process_media_stream(source, target, dry_run=dry_run, copy_mode=copy_mode):
+        for update in organize.process_media_stream(source, target, profile_key=profile, dry_run=dry_run, copy_mode=copy_mode):
             if active_sort_task["abort"]:
                 yield f"data: {json.dumps({'type': 'aborted'})}\n\n"
                 break

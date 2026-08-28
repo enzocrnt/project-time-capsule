@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Project Time Capsule</title>
-    <link rel="stylesheet" href="/static/style.css?v=2.3.0">
+    <link rel="stylesheet" href="/static/style.css?v=2.4.0">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -16,7 +16,7 @@
             <div class="brand">
                 <div>
                     <h1>Project Time Capsule</h1>
-                    <span class="version-tag">v2.3 • Media Pipeline</span>
+                    <span class="version-tag">v2.4 • Multi-Device Media Pipeline</span>
                 </div>
             </div>
             <div class="nav-status">
@@ -35,21 +35,32 @@
             <section class="control-panel">
                 <div class="panel-card">
                     <div class="card-header">
-                        <h2>Directory Setup</h2>
+                        <h2>Device Routing Profile</h2>
                         <span class="auto-save-pill" id="autoSaveIndicator">Synced</span>
+                    </div>
+
+                    <!-- Dynamic Profile Tabs -->
+                    <div class="profile-tabs" id="profileTabsContainer">
+                        <!-- Rendered dynamically by script.js -->
+                    </div>
+
+                    <!-- Profile Rename Row -->
+                    <div class="profile-rename-row">
+                        <span class="field-hint">Active Profile:</span>
+                        <input type="text" id="profileNameInput" class="profile-name-input" title="Click to rename this profile" autocomplete="off">
                     </div>
 
                     <!-- Source Input -->
                     <div class="field-group">
                         <div class="field-label-row">
                             <div>
-                                <label for="sourcePath">Unsorted Media Folder</label>
-                                <span class="field-hint">Feed your raw photo/video dumps here</span>
+                                <label for="sourcePath" id="sourceLabel">Unsorted Media Folder</label>
+                                <span class="field-hint" id="sourceHint">Feed raw SD card, inbox, or device dump</span>
                             </div>
-                            <span class="path-badge" id="sourceBadge">Checking...</span>
+                            <span class="path-badge" id="sourceBadge">Not Set</span>
                         </div>
                         <div class="input-with-action">
-                            <input type="text" id="sourcePath" placeholder="Select folder containing raw dumps..." autocomplete="off">
+                            <input type="text" id="sourcePath" placeholder="Click 'Browse' to choose folder..." autocomplete="off">
                             <button class="btn-browse" id="browseSourceBtn">Browse</button>
                         </div>
                     </div>
@@ -58,13 +69,13 @@
                     <div class="field-group">
                         <div class="field-label-row">
                             <div>
-                                <label for="targetPath">Organized Archive Destination</label>
-                                <span class="field-hint">Chronological folders will be built here</span>
+                                <label for="targetPath" id="targetLabel">Dedicated Archive Destination</label>
+                                <span class="field-hint" id="targetHint">Chronological year & month folders will build here</span>
                             </div>
-                            <span class="path-badge" id="targetBadge">Checking...</span>
+                            <span class="path-badge" id="targetBadge">Not Set</span>
                         </div>
                         <div class="input-with-action">
-                            <input type="text" id="targetPath" placeholder="Select main archive destination..." autocomplete="off">
+                            <input type="text" id="targetPath" placeholder="Click 'Browse' to set archive vault..." autocomplete="off">
                             <button class="btn-browse" id="browseTargetBtn">Browse</button>
                         </div>
                     </div>
@@ -100,7 +111,7 @@
                             <input type="checkbox" id="copyModeToggle">
                             <div class="toggle-content">
                                 <span class="toggle-title">Copy Mode</span>
-                                <span class="toggle-desc">Duplicates files to the archive while keeping originals in source.</span>
+                                <span class="toggle-desc">Duplicates files to archive (recommended for Camera SD cards).</span>
                             </div>
                         </label>
                     </div>
@@ -157,7 +168,7 @@
                     <div class="activity-feed" id="consoleOutput">
                         <div class="feed-item system" data-status="SYSTEM">
                             <span class="feed-tag">INFO</span>
-                            <span class="feed-text">Ready. Configure directories and start preview or sort.</span>
+                            <span class="feed-text">Ready. Choose device profile and start sorting.</span>
                         </div>
                     </div>
                 </div>
@@ -165,6 +176,6 @@
         </main>
     </div>
 
-    <script src="/static/script.js?v=2.3.0"></script>
+    <script src="/static/script.js?v=2.4.0"></script>
 </body>
 </html>

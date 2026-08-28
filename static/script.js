@@ -1,4 +1,6 @@
 document.addEventListener('DOMContentLoaded', async () => {
+    const profileTabsContainer = document.getElementById('profileTabsContainer');
+    const profileNameInput = document.getElementById('profileNameInput');
     const sourceInput = document.getElementById('sourcePath');
     const targetInput = document.getElementById('targetPath');
     const sourceBadge = document.getElementById('sourceBadge');
@@ -35,6 +37,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     let currentEventSource = null;
     let startTime = null;
     let accumulatedBytes = 0;
+    let loadedConfig = null;
+    let activeProfile = "mobile";
 
     function formatBytes(bytes) {
         if (!bytes || bytes === 0) return '0.0 MB';
@@ -45,7 +49,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         return mb.toFixed(1) + ' MB';
     }
 
-    // 1. Fetch & Render Thumbnail Strip
     async function loadThumbnails(path) {
         if (!path || !path.trim()) {
             thumbnailStrip.innerHTML = `<div class="empty-strip">Select a valid source folder with media to preview captures.</div>`;
@@ -56,7 +59,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const res = await fetch(`/api/incoming-files?path=${encodeURIComponent(path)}&limit=20`);
             const data = await res.json();
             if (!data.files || data.files.length === 0) {
-                thumbnailStrip.innerHTML = `<div class="empty-strip">No photos or videos found in selected folder.</div>`;
+                thumbnailStrip.innerHTML = `<div class="empty-strip">No photos, camera RAWs, or videos found.</div>`;
                 previewCount.innerText = '0 files';
                 return;
             }
@@ -68,17 +71,23 @@ document.addEventListener('DOMContentLoaded', async () => {
                 card.className = 'thumb-card';
                 card.title = `${f.name} (${f.size_mb} MB)`;
 
-                if (f.type === 'image') {
+                if (f.type === 'image' && !['ARW', 'DNG', 'CR2', 'CR3', 'NEF'].includes(f.ext)) {
                     const img = document.createElement('img');
                     img.src = `/api/thumbnail?path=${encodeURIComponent(path)}&file=${encodeURIComponent(f.rel_path)}`;
                     img.alt = f.name;
                     img.onerror = () => {
-                        card.innerHTML = `<span class="thumb-video-icon">IMG</span><span class="thumb-card-size">${f.size_mb}MB</span>`;
+                        card.innerHTML = `<span class="thumb-icon-placeholder">${f.ext}</span><span class="thumb-card-size">${f.size_mb}MB</span>`;
                     };
                     card.appendChild(img);
                 } else {
-                    card.innerHTML = `<span class="thumb-video-icon">VID</span><span class="thumb-card-size">${f.size_mb}MB</span>`;
+                    card.innerHTML = `<span class="thumb-icon-placeholder">${f.ext || 'VID'}</span><span class="thumb-card-size">${f.size_mb}MB</span>`;
                 }
+
+                const badge = document.createElement('span');
+                badge.className = 'thumb-format-badge';
+                badge.innerText = f.ext;
+                card.appendChild(badge);
+
                 thumbnailStrip.appendChild(card);
             });
         } catch (e) {
@@ -86,15 +95,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // 2. Path Validation & Undo Checking
     async function validatePath(input, badge) {
-        if (!input.value.trim()) {
-            badge.innerText = 'Empty';
+        const val = input.value.trim();
+        if (!val) {
+            badge.innerText = 'Not Set';
             badge.className = 'path-badge';
             return;
         }
         try {
-            const res = await fetch(`/api/validate-path?path=${encodeURIComponent(input.value)}`);
+            const res = await fetch(`/api/validate-path?path=${encodeURIComponent(val)}`);
             const data = await res.json();
             if (data.exists) {
                 badge.innerText = `Valid (${data.file_count} files)`;
@@ -125,34 +134,80 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    async function autoSaveConfig() {
+    async function autoSaveProfileConfig() {
         autoSaveInd.innerText = "Syncing...";
         autoSaveInd.style.color = "var(--accent-amber)";
+
+        if (loadedConfig && loadedConfig.profiles && loadedConfig.profiles[activeProfile]) {
+            loadedConfig.profiles[activeProfile].name = profileNameInput.value.trim() || activeProfile;
+            loadedConfig.profiles[activeProfile].source_path = sourceInput.value;
+            loadedConfig.profiles[activeProfile].target_path = targetInput.value;
+        }
+
         await fetch('/api/config', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+                profile_key: activeProfile,
+                profile_name: profileNameInput.value.trim(),
                 source_path: sourceInput.value,
                 target_path: targetInput.value
             })
         });
+
+        renderProfileTabs();
         autoSaveInd.innerText = "Synced";
         autoSaveInd.style.color = "var(--accent-green)";
     }
 
-    // 3. Initial Load
-    try {
-        const res = await fetch('/api/config');
-        const config = await res.json();
-        sourceInput.value = config.source_path || '';
-        targetInput.value = config.target_path || '';
+    function renderProfileTabs() {
+        if (!loadedConfig || !loadedConfig.profiles) return;
+        profileTabsContainer.innerHTML = '';
+        Object.keys(loadedConfig.profiles).forEach(key => {
+            const p = loadedConfig.profiles[key];
+            const btn = document.createElement('button');
+            btn.className = `profile-tab ${key === activeProfile ? 'active' : ''}`;
+            btn.innerText = p.name || key;
+            btn.addEventListener('click', () => {
+                switchProfile(key);
+                autoSaveProfileConfig();
+            });
+            profileTabsContainer.appendChild(btn);
+        });
+    }
+
+    function switchProfile(profileKey) {
+        activeProfile = profileKey;
+        renderProfileTabs();
+
+        if (loadedConfig && loadedConfig.profiles && loadedConfig.profiles[profileKey]) {
+            const p = loadedConfig.profiles[profileKey];
+            profileNameInput.value = p.name || profileKey;
+            sourceInput.value = p.source_path || '';
+            targetInput.value = p.target_path || '';
+        } else {
+            profileNameInput.value = profileKey;
+            sourceInput.value = '';
+            targetInput.value = '';
+        }
+
         validatePath(sourceInput, sourceBadge);
         validatePath(targetInput, targetBadge);
         loadThumbnails(sourceInput.value);
+    }
+
+    // Initial Load
+    try {
+        const res = await fetch('/api/config');
+        loadedConfig = await res.json();
+        activeProfile = loadedConfig.active_profile || 'mobile';
+        switchProfile(activeProfile);
         checkUndoStatus();
     } catch (e) {
         console.error("Config fetch error", e);
     }
+
+    profileNameInput.addEventListener('change', autoSaveProfileConfig);
 
     browseSrcBtn.addEventListener('click', async () => {
         const res = await fetch(`/api/browse?initial_dir=${encodeURIComponent(sourceInput.value)}`);
@@ -161,7 +216,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             sourceInput.value = data.path;
             validatePath(sourceInput, sourceBadge);
             loadThumbnails(data.path);
-            autoSaveConfig();
+            autoSaveProfileConfig();
         }
     });
 
@@ -171,12 +226,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (data.path) {
             targetInput.value = data.path;
             validatePath(targetInput, targetBadge);
-            autoSaveConfig();
+            autoSaveProfileConfig();
         }
     });
 
-    sourceInput.addEventListener('change', () => { validatePath(sourceInput, sourceBadge); loadThumbnails(sourceInput.value); autoSaveConfig(); });
-    targetInput.addEventListener('change', () => { validatePath(targetInput, targetBadge); autoSaveConfig(); });
+    sourceInput.addEventListener('change', () => { validatePath(sourceInput, sourceBadge); loadThumbnails(sourceInput.value); autoSaveProfileConfig(); });
+    targetInput.addEventListener('change', () => { validatePath(targetInput, targetBadge); autoSaveProfileConfig(); });
 
     openTargetBtn.addEventListener('click', async () => {
         if (!targetInput.value.trim()) return;
@@ -187,9 +242,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     });
 
-    // 4. Undo Rollback Action
     undoBtn.addEventListener('click', async () => {
-        const confirmUndo = confirm("Are you sure you want to roll back the previous batch and move files back to the source folder?");
+        const confirmUndo = confirm("Are you sure you want to roll back the previous batch and restore files to their source folder?");
         if (!confirmUndo) return;
 
         undoBtn.disabled = true;
@@ -230,7 +284,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         activityFeed.scrollTop = activityFeed.scrollHeight;
     }
 
-    // Metric Filter Click Handler
     metricCards.forEach(card => {
         card.addEventListener('click', () => {
             metricCards.forEach(c => c.classList.remove('active'));
@@ -255,10 +308,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         abortBtn.innerText = "Aborting...";
     });
 
-    // 5. Live Execution Pipeline
     runBtn.addEventListener('click', () => {
         if (!dryRunToggle.checked) {
-            const confirmRun = confirm("You are about to execute a live sort. Files will be organized into your destination archive. Proceed?");
+            const profileDisplayName = profileNameInput.value.trim() || activeProfile;
+            const confirmRun = confirm(`You are about to execute live sorting for [${profileDisplayName}]. Proceed?`);
             if (!confirmRun) return;
         }
 
@@ -279,14 +332,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const dryRun = dryRunToggle.checked;
         const copyMode = copyToggle.checked;
-        const url = `/api/stream?dry_run=${dryRun}&copy_mode=${copyMode}`;
+        const url = `/api/stream?dry_run=${dryRun}&copy_mode=${copyMode}&profile=${activeProfile}`;
         currentEventSource = new EventSource(url);
 
         currentEventSource.onmessage = (e) => {
             const data = JSON.parse(e.data);
 
             if (data.type === "start") {
-                appendFeed("SYSTEM", `Scanning complete. Found ${data.total} media captures.`);
+                appendFeed("SYSTEM", `Scanning complete. Found ${data.total} media captures in ${profileNameInput.value} source.`);
             } else if (data.type === "progress") {
                 const pct = Math.round((data.index / data.total) * 100);
                 progressBar.style.width = `${pct}%`;

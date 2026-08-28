@@ -13,8 +13,8 @@ try:
 except ImportError:
     HAS_PILLOW = False
 
-IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.heic', '.dng', '.raw', '.webp'}
-VIDEO_EXTENSIONS = {'.mp4', '.mov', '.mkv', '.avi', '.3gp', '.m4v'}
+IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.heic', '.dng', '.raw', '.arw', '.cr2', '.cr3', '.nef', '.webp', '.bmp', '.tiff'}
+VIDEO_EXTENSIONS = {'.mp4', '.mov', '.mkv', '.avi', '.3gp', '.m4v', '.wmv', '.webm', '.mts'}
 
 MONTH_NAMES = {
     "01": "Jan.", "02": "Feb.", "03": "Mar.", "04": "Apr.",
@@ -22,38 +22,77 @@ MONTH_NAMES = {
     "09": "Sept.", "10": "Oct.", "11": "Nov.", "12": "Dec."
 }
 
-FILENAME_PATTERN = re.compile(
-    r'^(?P<prefix>IMG|VID|PXL|PHOTO|VIDEO|Screenshot)?[_\-]?'
-    r'(?P<year>\d{4})[_\-]?'
-    r'(?P<month>\d{2})[_\-]?'
-    r'(?P<day>\d{2})',
-    re.IGNORECASE
-)
+PATTERNS = [
+    re.compile(r'^(?P<prefix>IMG|VID|PXL|PHOTO|VIDEO|Screenshot|Recording|Screen Recording)?[_\-\s]?(?P<year>\d{4})[_\-]?(?P<month>\d{2})[_\-]?(?P<day>\d{2})', re.IGNORECASE),
+    re.compile(r'^(?P<year>\d{4})[_\-\.](?P<month>\d{2})[_\-\.](?P<day>\d{2})', re.IGNORECASE),
+]
 
 CONFIG_FILE = Path(__file__).parent / "config.json"
 HISTORY_FILE = Path(__file__).parent / "last_run.json"
 
+DEFAULT_PROFILES = {
+    "mobile": {
+        "name": "Mobile Phone",
+        "source_path": "",
+        "target_path": ""
+    },
+    "camera": {
+        "name": "Camera / SD Card",
+        "source_path": "",
+        "target_path": ""
+    },
+    "computer": {
+        "name": "PC / Laptop",
+        "source_path": "",
+        "target_path": ""
+    }
+}
+
 def load_config():
-    default_cfg = {"source_path": "", "target_path": ""}
     if not CONFIG_FILE.exists():
-        return default_cfg
+        data = {
+            "active_profile": "mobile",
+            "profiles": DEFAULT_PROFILES
+        }
+        return data
     try:
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-            return {**default_cfg, **data}
+            if "profiles" not in data:
+                data = {
+                    "active_profile": "mobile",
+                    "profiles": DEFAULT_PROFILES
+                }
+            return data
     except Exception:
-        return default_cfg
+        return {"active_profile": "mobile", "profiles": DEFAULT_PROFILES}
 
-def save_config(source_path: str, target_path: str):
-    data = {"source_path": source_path, "target_path": target_path}
+def save_raw_config(data: dict):
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4)
-    return data
 
-def save_transaction_history(records: list, copy_mode: bool):
+def save_active_profile(profile_key: str, source_path: str, target_path: str, profile_name: str = None):
+    config = load_config()
+    if profile_key not in config["profiles"]:
+        config["profiles"][profile_key] = {
+            "name": profile_name or profile_key.replace("_", " ").title(),
+            "source_path": "",
+            "target_path": ""
+        }
+    if profile_name:
+        config["profiles"][profile_key]["name"] = profile_name
+
+    config["active_profile"] = profile_key
+    config["profiles"][profile_key]["source_path"] = source_path
+    config["profiles"][profile_key]["target_path"] = target_path
+    save_raw_config(config)
+    return config
+
+def save_transaction_history(records: list, copy_mode: bool, profile_key: str):
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump({
             "timestamp": datetime.now().isoformat(),
+            "profile": profile_key,
             "copy_mode": copy_mode,
             "records": records
         }, f, indent=4)
@@ -75,7 +114,7 @@ def compute_sha256(file_path: Path, chunk_size: int = 65536) -> str:
     return hasher.hexdigest()
 
 def extract_exif_date(file_path: Path):
-    if not HAS_PILLOW or file_path.suffix.lower() not in IMAGE_EXTENSIONS:
+    if not HAS_PILLOW:
         return None
     try:
         with Image.open(file_path) as img:
@@ -84,7 +123,7 @@ def extract_exif_date(file_path: Path):
                 return None
             date_str = exif.get(36867) or exif.get(306)
             if date_str:
-                dt = datetime.strptime(str(date_str)[:10], "%Y:%m:%d")
+                dt = datetime.strptime(str(date_str)[:10].replace("-", ":"), "%Y:%m:%d")
                 return f"{dt.year:04d}", f"{dt.month:02d}"
     except Exception:
         pass
@@ -93,16 +132,20 @@ def extract_exif_date(file_path: Path):
 def get_destination_subpath(file_path: Path, year_dir: Path = None):
     filename = file_path.stem
     extension = file_path.suffix.lower()
-    match = FILENAME_PATTERN.match(filename)
 
     year, month = None, None
     prefix = ""
 
-    if match:
-        year = match.group('year')
-        month = match.group('month')
-        prefix = (match.group('prefix') or '').upper()
-    else:
+    for pattern in PATTERNS:
+        match = pattern.match(filename)
+        if match:
+            groups = match.groupdict()
+            year = groups.get('year')
+            month = groups.get('month')
+            prefix = (groups.get('prefix') or '').upper()
+            break
+
+    if not year or not month:
         exif_result = extract_exif_date(file_path)
         if exif_result:
             year, month = exif_result
@@ -115,6 +158,7 @@ def get_destination_subpath(file_path: Path, year_dir: Path = None):
 
     month_label = MONTH_NAMES[month]
     month_folder_name = None
+
     if year_dir and year_dir.exists():
         target_prefix = f"{month}-00-{year}"
         for existing in year_dir.iterdir():
@@ -124,8 +168,14 @@ def get_destination_subpath(file_path: Path, year_dir: Path = None):
 
     if not month_folder_name:
         month_folder_name = f"{month}-00-{year} ({month_label} {year})"
-    
-    sub_folder = "Vids" if (extension in VIDEO_EXTENSIONS or prefix in {"VID", "VIDEO"}) else "Pics"
+
+    is_video = (
+        extension in VIDEO_EXTENSIONS or
+        prefix in {"VID", "VIDEO", "RECORDING", "SCREEN RECORDING"} or
+        filename.upper().startswith("C00")
+    )
+    sub_folder = "Vids" if is_video else "Pics"
+
     return Path(year) / month_folder_name / sub_folder
 
 def resolve_unique_path(destination_folder: Path, original_name: str) -> Path:
@@ -139,7 +189,6 @@ def resolve_unique_path(destination_folder: Path, original_name: str) -> Path:
     return new_path
 
 def rollback_last_run():
-    """Rolls back files moved during the last non-dry-run operation."""
     history = load_transaction_history()
     if not history or not history.get("records"):
         return {"status": "error", "message": "No transaction history found to undo."}
@@ -168,15 +217,14 @@ def rollback_last_run():
 
     return {"status": "ok", "restored": restored, "errors": errors}
 
-def process_media_stream(source_dir: Path, target_dir: Path, dry_run: bool = False, copy_mode: bool = False):
-    """Generator yielding real-time stats including bytes moved and saved."""
+def process_media_stream(source_dir: Path, target_dir: Path, profile_key: str = "default", dry_run: bool = False, copy_mode: bool = False):
     if not source_dir.exists():
         yield {"type": "error", "message": f"Source directory does not exist: {source_dir}"}
         return
 
     all_files = [p for p in source_dir.rglob('*') if p.is_file() and not p.name.startswith('.')]
     total_files = len(all_files)
-    
+
     yield {"type": "start", "total": total_files}
 
     if total_files == 0:
@@ -191,7 +239,7 @@ def process_media_stream(source_dir: Path, target_dir: Path, dry_run: bool = Fal
 
     action_label = "Copying" if copy_mode else "Moving"
     action_fn = shutil.copy2 if copy_mode else shutil.move
-    
+
     processed = 0
     duplicates = 0
     conflicts = 0
@@ -206,10 +254,16 @@ def process_media_stream(source_dir: Path, target_dir: Path, dry_run: bool = Fal
         except Exception:
             file_size = 0
 
-        match = FILENAME_PATTERN.match(file_path.stem)
-        year_dir = target_dir / match.group('year') if match else None
+        year_guess = None
+        for p in PATTERNS:
+            m = p.match(file_path.stem)
+            if m:
+                year_guess = m.groupdict().get('year')
+                break
+
+        year_dir = target_dir / year_guess if year_guess else None
         subpath = get_destination_subpath(file_path, year_dir=year_dir)
-        
+
         if not subpath:
             skipped += 1
             yield {
@@ -266,7 +320,7 @@ def process_media_stream(source_dir: Path, target_dir: Path, dry_run: bool = Fal
             }
 
     if not dry_run and transactions:
-        save_transaction_history(transactions, copy_mode)
+        save_transaction_history(transactions, copy_mode, profile_key)
 
     yield {
         "type": "done",
