@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Project Time Capsule</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v=2.2.1">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -16,10 +16,11 @@
             <div class="brand">
                 <div>
                     <h1>Project Time Capsule</h1>
-                    <span class="version-tag">v2.1 • Media Pipeline</span>
+                    <span class="version-tag">v2.2 • Media Pipeline</span>
                 </div>
             </div>
             <div class="nav-status">
+                <button class="btn-ghost" id="openTargetBtn" title="Open Destination in Explorer">Open Archive Destination</button>
                 <div class="status-indicator">
                     <span class="pulse-dot" id="statusDot"></span>
                     <span id="appStatus">Standing By</span>
@@ -68,6 +69,17 @@
                     </div>
                 </div>
 
+                <!-- Live Media Preview Strip -->
+                <div class="panel-card">
+                    <div class="card-header">
+                        <h2>Incoming Media Preview</h2>
+                        <span class="field-hint" id="previewCount">0 files</span>
+                    </div>
+                    <div class="thumbnail-strip" id="thumbnailStrip">
+                        <div class="empty-strip">Select a valid source folder with media to preview captures.</div>
+                    </div>
+                </div>
+
                 <!-- Execution Parameters Card -->
                 <div class="panel-card">
                     <div class="card-header">
@@ -92,29 +104,32 @@
                         </label>
                     </div>
 
-                    <button class="btn btn-action preview-mode" id="runPipelineBtn">
-                        <span class="btn-text">Run Safe Preview</span>
-                    </button>
+                    <div class="action-btn-group">
+                        <button class="btn btn-action preview-mode" id="runPipelineBtn">
+                            <span class="btn-text">Run Safe Preview</span>
+                        </button>
+                        <button class="btn btn-abort" id="abortBtn" disabled>Cancel</button>
+                    </div>
                 </div>
             </section>
 
             <!-- Right Panel: Telemetry, Metrics & Live Stream -->
             <section class="telemetry-panel">
-                <!-- Metrics Bar -->
+                <!-- Interactive Metrics Bar -->
                 <div class="metrics-grid">
-                    <div class="metric-card" style="--accent: #3B82F6">
+                    <div class="metric-card active" data-filter="ALL" style="--accent: #38BDF8">
                         <span class="metric-val" id="metricProcessed">0</span>
-                        <span class="metric-label">Sorted Media</span>
+                        <span class="metric-label">All Media</span>
                     </div>
-                    <div class="metric-card" style="--accent: #F59E0B">
+                    <div class="metric-card" data-filter="DUPLICATE" style="--accent: #F59E0B">
                         <span class="metric-val" id="metricDuplicates">0</span>
-                        <span class="metric-label">Exact Twins Skipped</span>
+                        <span class="metric-label">Twins Skipped</span>
                     </div>
-                    <div class="metric-card" style="--accent: #8B5CF6">
+                    <div class="metric-card" data-filter="CONFLICT" style="--accent: #8B5CF6">
                         <span class="metric-val" id="metricConflicts">0</span>
-                        <span class="metric-label">Name Collisions Renamed</span>
+                        <span class="metric-label">Collisions Renamed</span>
                     </div>
-                    <div class="metric-card" style="--accent: #EF4444">
+                    <div class="metric-card" data-filter="SKIP" style="--accent: #EF4444">
                         <span class="metric-val" id="metricSkipped">0</span>
                         <span class="metric-label">Unmatched</span>
                     </div>
@@ -135,7 +150,7 @@
                     </div>
 
                     <div class="activity-feed" id="consoleOutput">
-                        <div class="feed-item system">
+                        <div class="feed-item system" data-status="SYSTEM">
                             <span class="feed-tag">INFO</span>
                             <span class="feed-text">Ready. Configure directories and start preview or sort.</span>
                         </div>
@@ -145,6 +160,6 @@
         </main>
     </div>
 
-    <script src="/static/script.js"></script>
+    <script src="/static/script.js?v=2.2.0"></script>
 </body>
 </html>
