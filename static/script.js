@@ -7,6 +7,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const browseTgtBtn = document.getElementById('browseTargetBtn');
     const autoSaveInd = document.getElementById('autoSaveIndicator');
     const openTargetBtn = document.getElementById('openTargetBtn');
+    const undoBtn = document.getElementById('undoBtn');
 
     const thumbnailStrip = document.getElementById('thumbnailStrip');
     const previewCount = document.getElementById('previewCount');
@@ -20,16 +21,29 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const progressBar = document.getElementById('progressBar');
     const progressPercent = document.getElementById('progressPercent');
-    const progressText = document.getElementById('progressText');
+    const speedTimer = document.getElementById('speedTimer');
     const activityFeed = document.getElementById('consoleOutput');
 
     const mProcessed = document.getElementById('metricProcessed');
     const mDuplicates = document.getElementById('metricDuplicates');
     const mConflicts = document.getElementById('metricConflicts');
     const mSkipped = document.getElementById('metricSkipped');
+    const mSizeProcessed = document.getElementById('metricSizeProcessed');
+    const mSizeSaved = document.getElementById('metricSizeSaved');
     const metricCards = document.querySelectorAll('.metric-card');
 
     let currentEventSource = null;
+    let startTime = null;
+    let accumulatedBytes = 0;
+
+    function formatBytes(bytes) {
+        if (!bytes || bytes === 0) return '0.0 MB';
+        const mb = bytes / (1024 * 1024);
+        if (mb >= 1024) {
+            return (mb / 1024).toFixed(2) + ' GB';
+        }
+        return mb.toFixed(1) + ' MB';
+    }
 
     // 1. Fetch & Render Thumbnail Strip
     async function loadThumbnails(path) {
@@ -72,7 +86,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // 2. Path Validation & Auto-Save
+    // 2. Path Validation & Undo Checking
     async function validatePath(input, badge) {
         if (!input.value.trim()) {
             badge.innerText = 'Empty';
@@ -83,7 +97,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const res = await fetch(`/api/validate-path?path=${encodeURIComponent(input.value)}`);
             const data = await res.json();
             if (data.exists) {
-                badge.innerText = `Valid (${data.file_count} files found)`;
+                badge.innerText = `Valid (${data.file_count} files)`;
                 badge.className = 'path-badge valid';
             } else {
                 badge.innerText = 'Path not found';
@@ -92,6 +106,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         } catch (e) {
             badge.innerText = 'Offline';
             badge.className = 'path-badge';
+        }
+    }
+
+    async function checkUndoStatus() {
+        try {
+            const res = await fetch('/api/undo-status');
+            const data = await res.json();
+            if (data.can_undo) {
+                undoBtn.disabled = false;
+                undoBtn.innerText = `Undo Last Sort (${data.count})`;
+            } else {
+                undoBtn.disabled = true;
+                undoBtn.innerText = 'Undo Last Sort';
+            }
+        } catch (e) {
+            undoBtn.disabled = true;
         }
     }
 
@@ -119,11 +149,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         validatePath(sourceInput, sourceBadge);
         validatePath(targetInput, targetBadge);
         loadThumbnails(sourceInput.value);
+        checkUndoStatus();
     } catch (e) {
         console.error("Config fetch error", e);
     }
 
-    // Directory Browser Handlers
     browseSrcBtn.addEventListener('click', async () => {
         const res = await fetch(`/api/browse?initial_dir=${encodeURIComponent(sourceInput.value)}`);
         const data = await res.json();
@@ -145,15 +175,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-    sourceInput.addEventListener('change', () => {
-        validatePath(sourceInput, sourceBadge);
-        loadThumbnails(sourceInput.value);
-        autoSaveConfig();
-    });
-    targetInput.addEventListener('change', () => {
-        validatePath(targetInput, targetBadge);
-        autoSaveConfig();
-    });
+    sourceInput.addEventListener('change', () => { validatePath(sourceInput, sourceBadge); loadThumbnails(sourceInput.value); autoSaveConfig(); });
+    targetInput.addEventListener('change', () => { validatePath(targetInput, targetBadge); autoSaveConfig(); });
 
     openTargetBtn.addEventListener('click', async () => {
         if (!targetInput.value.trim()) return;
@@ -162,6 +185,30 @@ document.addEventListener('DOMContentLoaded', async () => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ path: targetInput.value })
         });
+    });
+
+    // 4. Undo Rollback Action
+    undoBtn.addEventListener('click', async () => {
+        const confirmUndo = confirm("Are you sure you want to roll back the previous batch and move files back to the source folder?");
+        if (!confirmUndo) return;
+
+        undoBtn.disabled = true;
+        undoBtn.innerText = "Restoring...";
+        try {
+            const res = await fetch('/api/undo', { method: 'POST' });
+            const data = await res.json();
+            if (data.status === 'ok') {
+                appendFeed("SYSTEM", `Rollback complete: ${data.restored} files restored to source folder.`);
+                validatePath(sourceInput, sourceBadge);
+                validatePath(targetInput, targetBadge);
+                loadThumbnails(sourceInput.value);
+            } else {
+                appendFeed("SKIP", `Undo failed: ${data.message}`);
+            }
+        } catch (e) {
+            appendFeed("SKIP", "Undo request failed.");
+        }
+        checkUndoStatus();
     });
 
     dryRunToggle.addEventListener('change', () => {
@@ -183,7 +230,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         activityFeed.scrollTop = activityFeed.scrollHeight;
     }
 
-    // 4. Metric Filter Click Handler
+    // Metric Filter Click Handler
     metricCards.forEach(card => {
         card.addEventListener('click', () => {
             metricCards.forEach(c => c.classList.remove('active'));
@@ -202,14 +249,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     });
 
-    // 5. Abort Sorting
     abortBtn.addEventListener('click', async () => {
         await fetch('/api/abort', { method: 'POST' });
         abortBtn.disabled = true;
         abortBtn.innerText = "Aborting...";
     });
 
-    // 6. Live Sorting Pipeline Trigger
+    // 5. Live Execution Pipeline
     runBtn.addEventListener('click', () => {
         if (!dryRunToggle.checked) {
             const confirmRun = confirm("You are about to execute a live sort. Files will be organized into your destination archive. Proceed?");
@@ -226,7 +272,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         activityFeed.innerHTML = '';
         progressBar.style.width = '0%';
         progressPercent.innerText = '0%';
-        progressText.innerText = '0 / 0 Files';
+        speedTimer.innerText = 'Starting...';
+
+        startTime = performance.now();
+        accumulatedBytes = 0;
 
         const dryRun = dryRunToggle.checked;
         const copyMode = copyToggle.checked;
@@ -237,14 +286,24 @@ document.addEventListener('DOMContentLoaded', async () => {
             const data = JSON.parse(e.data);
 
             if (data.type === "start") {
-                progressText.innerText = `0 / ${data.total} Files`;
                 appendFeed("SYSTEM", `Scanning complete. Found ${data.total} media captures.`);
             } else if (data.type === "progress") {
                 const pct = Math.round((data.index / data.total) * 100);
                 progressBar.style.width = `${pct}%`;
                 progressPercent.innerText = `${pct}%`;
-                progressText.innerText = `${data.index} / ${data.total} Files`;
                 appendFeed(data.status, `${data.file} -> ${data.target}`);
+
+                mSizeProcessed.innerText = formatBytes(data.bytes_processed);
+                mSizeSaved.innerText = `${formatBytes(data.bytes_saved)} Saved`;
+
+                accumulatedBytes += (data.bytes_current || 0);
+                const elapsedSec = (performance.now() - startTime) / 1000;
+                if (elapsedSec > 0.5) {
+                    const mbps = (accumulatedBytes / (1024 * 1024)) / elapsedSec;
+                    const remainingFiles = data.total - data.index;
+                    const etaSec = Math.round((elapsedSec / data.index) * remainingFiles);
+                    speedTimer.innerText = `Rate: ${mbps.toFixed(1)} MB/s • ETA: ${etaSec}s`;
+                }
             } else if (data.type === "aborted") {
                 appendFeed("SKIP", "Sorting process was aborted by user.");
                 appStatus.innerText = "Aborted";
@@ -258,6 +317,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 mDuplicates.innerText = data.summary.duplicates;
                 mConflicts.innerText = data.summary.conflicts;
                 mSkipped.innerText = data.summary.skipped;
+                mSizeProcessed.innerText = formatBytes(data.summary.bytes_processed);
+                mSizeSaved.innerText = `${formatBytes(data.summary.bytes_saved)} Saved`;
+
+                const totalSec = Math.round((performance.now() - startTime) / 1000);
+                speedTimer.innerText = `Done in ${totalSec}s • ${formatBytes(data.summary.bytes_processed)} sorted`;
 
                 appendFeed("SYSTEM", "Pipeline execution complete.");
                 appStatus.innerText = "Completed";
@@ -285,6 +349,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             validatePath(sourceInput, sourceBadge);
             validatePath(targetInput, targetBadge);
             loadThumbnails(sourceInput.value);
+            checkUndoStatus();
         }
     });
 });

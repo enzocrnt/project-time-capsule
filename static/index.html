@@ -4,10 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Project Time Capsule</title>
-    <link rel="stylesheet" href="/static/style.css?v=2.2.1">
+    <link rel="stylesheet" href="/static/style.css?v=2.3.0">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 <body>
     <div class="app-layout">
@@ -16,10 +16,11 @@
             <div class="brand">
                 <div>
                     <h1>Project Time Capsule</h1>
-                    <span class="version-tag">v2.2 • Media Pipeline</span>
+                    <span class="version-tag">v2.3 • Media Pipeline</span>
                 </div>
             </div>
             <div class="nav-status">
+                <button class="btn-ghost" id="undoBtn" disabled title="Roll back the previous sorting batch">Undo Last Sort</button>
                 <button class="btn-ghost" id="openTargetBtn" title="Open Destination in Explorer">Open Archive Destination</button>
                 <div class="status-indicator">
                     <span class="pulse-dot" id="statusDot"></span>
@@ -115,23 +116,27 @@
 
             <!-- Right Panel: Telemetry, Metrics & Live Stream -->
             <section class="telemetry-panel">
-                <!-- Interactive Metrics Bar -->
+                <!-- Metrics Bar -->
                 <div class="metrics-grid">
                     <div class="metric-card active" data-filter="ALL" style="--accent: #38BDF8">
                         <span class="metric-val" id="metricProcessed">0</span>
                         <span class="metric-label">All Media</span>
+                        <span class="metric-sub" id="metricSizeProcessed">0.0 MB</span>
                     </div>
                     <div class="metric-card" data-filter="DUPLICATE" style="--accent: #F59E0B">
                         <span class="metric-val" id="metricDuplicates">0</span>
                         <span class="metric-label">Twins Skipped</span>
+                        <span class="metric-sub" id="metricSizeSaved">0.0 MB Saved</span>
                     </div>
                     <div class="metric-card" data-filter="CONFLICT" style="--accent: #8B5CF6">
                         <span class="metric-val" id="metricConflicts">0</span>
                         <span class="metric-label">Collisions Renamed</span>
+                        <span class="metric-sub">Auto-suffixed</span>
                     </div>
                     <div class="metric-card" data-filter="SKIP" style="--accent: #EF4444">
                         <span class="metric-val" id="metricSkipped">0</span>
                         <span class="metric-label">Unmatched</span>
+                        <span class="metric-sub">Missing dates</span>
                     </div>
                 </div>
 
@@ -140,7 +145,7 @@
                     <div class="card-header">
                         <h2>Sorting Activity Log</h2>
                         <div class="progress-info">
-                            <span id="progressText">0 / 0 Files</span>
+                            <span id="speedTimer">Rate: 0 MB/s • ETA: --:--</span>
                             <span class="progress-badge" id="progressPercent">0%</span>
                         </div>
                     </div>
@@ -160,6 +165,6 @@
         </main>
     </div>
 
-    <script src="/static/script.js?v=2.2.0"></script>
+    <script src="/static/script.js?v=2.3.0"></script>
 </body>
 </html>

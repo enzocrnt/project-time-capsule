@@ -76,10 +76,8 @@ async def validate_path(path: str):
 
 @app.get("/api/incoming-files")
 async def get_incoming_files(path: str, limit: int = 20):
-    """Scans and returns incoming media captures with robust path resolution."""
     if not path.strip():
         return {"files": []}
-    
     p = Path(path).resolve()
     if not p.exists() or not p.is_dir():
         return {"files": []}
@@ -109,13 +107,12 @@ async def get_incoming_files(path: str, limit: int = 20):
             if len(media_files) >= limit:
                 break
     except Exception as e:
-        print(f"Preview scan error: {e}")
+        print(f"Scan error: {e}")
 
     return {"files": media_files}
 
 @app.get("/api/thumbnail")
 async def get_thumbnail(path: str, file: str):
-    """Generates JPEG thumbnail with RGB conversion to prevent alpha channel crashes."""
     p_root = Path(path).resolve()
     file_path = (p_root / file).resolve()
 
@@ -132,8 +129,7 @@ async def get_thumbnail(path: str, file: str):
             buffer = io.BytesIO()
             img.save(buffer, format="JPEG", quality=80)
             return Response(content=buffer.getvalue(), media_type="image/jpeg")
-    except Exception as e:
-        print(f"Thumbnail generation error: {e}")
+    except Exception:
         raise HTTPException(status_code=500, detail="Thumbnail render failed")
 
 @app.post("/api/open-folder")
@@ -147,6 +143,22 @@ async def open_system_folder(payload: OpenFolderRequest):
     elif os.name == 'posix':
         subprocess.Popen(['xdg-open' if 'linux' in os.sys.platform else 'open', str(p)])
     return {"status": "ok"}
+
+@app.get("/api/undo-status")
+async def get_undo_status():
+    history = organize.load_transaction_history()
+    if history and not history.get("copy_mode") and len(history.get("records", [])) > 0:
+        return {
+            "can_undo": True,
+            "count": len(history["records"]),
+            "timestamp": history.get("timestamp")
+        }
+    return {"can_undo": False, "count": 0}
+
+@app.post("/api/undo")
+async def execute_undo():
+    res = organize.rollback_last_run()
+    return res
 
 @app.post("/api/abort")
 async def abort_sorting():

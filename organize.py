@@ -31,21 +31,41 @@ FILENAME_PATTERN = re.compile(
 )
 
 CONFIG_FILE = Path(__file__).parent / "config.json"
+HISTORY_FILE = Path(__file__).parent / "last_run.json"
 
 def load_config():
+    default_cfg = {"source_path": "", "target_path": ""}
     if not CONFIG_FILE.exists():
-        return {"source_path": "", "target_path": ""}
+        return default_cfg
     try:
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+            return {**default_cfg, **data}
     except Exception:
-        return {"source_path": "", "target_path": ""}
+        return default_cfg
 
 def save_config(source_path: str, target_path: str):
     data = {"source_path": source_path, "target_path": target_path}
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4)
     return data
+
+def save_transaction_history(records: list, copy_mode: bool):
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump({
+            "timestamp": datetime.now().isoformat(),
+            "copy_mode": copy_mode,
+            "records": records
+        }, f, indent=4)
+
+def load_transaction_history():
+    if not HISTORY_FILE.exists():
+        return None
+    try:
+        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
 
 def compute_sha256(file_path: Path, chunk_size: int = 65536) -> str:
     hasher = hashlib.sha256()
@@ -70,7 +90,7 @@ def extract_exif_date(file_path: Path):
         pass
     return None
 
-def get_folder_metadata(file_path: Path, year_dir: Path = None):
+def get_destination_subpath(file_path: Path, year_dir: Path = None):
     filename = file_path.stem
     extension = file_path.suffix.lower()
     match = FILENAME_PATTERN.match(filename)
@@ -93,6 +113,7 @@ def get_folder_metadata(file_path: Path, year_dir: Path = None):
     if month not in MONTH_NAMES:
         return None
 
+    month_label = MONTH_NAMES[month]
     month_folder_name = None
     if year_dir and year_dir.exists():
         target_prefix = f"{month}-00-{year}"
@@ -102,11 +123,10 @@ def get_folder_metadata(file_path: Path, year_dir: Path = None):
                 break
 
     if not month_folder_name:
-        month_label = MONTH_NAMES[month]
         month_folder_name = f"{month}-00-{year} ({month_label} {year})"
     
     sub_folder = "Vids" if (extension in VIDEO_EXTENSIONS or prefix in {"VID", "VIDEO"}) else "Pics"
-    return year, month_folder_name, sub_folder
+    return Path(year) / month_folder_name / sub_folder
 
 def resolve_unique_path(destination_folder: Path, original_name: str) -> Path:
     stem = Path(original_name).stem
@@ -118,8 +138,38 @@ def resolve_unique_path(destination_folder: Path, original_name: str) -> Path:
         new_path = destination_folder / f"{stem}_{counter}{suffix}"
     return new_path
 
+def rollback_last_run():
+    """Rolls back files moved during the last non-dry-run operation."""
+    history = load_transaction_history()
+    if not history or not history.get("records"):
+        return {"status": "error", "message": "No transaction history found to undo."}
+
+    if history.get("copy_mode"):
+        return {"status": "error", "message": "Last run was executed in Copy Mode (no files were displaced)."}
+
+    restored = 0
+    errors = 0
+    records = history["records"]
+
+    for item in reversed(records):
+        src_orig = Path(item["source_path"])
+        dest_moved = Path(item["dest_path"])
+
+        if dest_moved.exists():
+            try:
+                src_orig.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(dest_moved, src_orig)
+                restored += 1
+            except Exception:
+                errors += 1
+
+    if HISTORY_FILE.exists():
+        HISTORY_FILE.unlink()
+
+    return {"status": "ok", "restored": restored, "errors": errors}
+
 def process_media_stream(source_dir: Path, target_dir: Path, dry_run: bool = False, copy_mode: bool = False):
-    """Generator that yields real-time progress dicts for FastAPI SSE."""
+    """Generator yielding real-time stats including bytes moved and saved."""
     if not source_dir.exists():
         yield {"type": "error", "message": f"Source directory does not exist: {source_dir}"}
         return
@@ -130,7 +180,13 @@ def process_media_stream(source_dir: Path, target_dir: Path, dry_run: bool = Fal
     yield {"type": "start", "total": total_files}
 
     if total_files == 0:
-        yield {"type": "done", "summary": {"processed": 0, "duplicates": 0, "conflicts": 0, "skipped": 0}}
+        yield {
+            "type": "done",
+            "summary": {
+                "processed": 0, "duplicates": 0, "conflicts": 0, "skipped": 0,
+                "bytes_processed": 0, "bytes_saved": 0
+            }
+        }
         return
 
     action_label = "Copying" if copy_mode else "Moving"
@@ -140,24 +196,32 @@ def process_media_stream(source_dir: Path, target_dir: Path, dry_run: bool = Fal
     duplicates = 0
     conflicts = 0
     skipped = 0
+    bytes_processed = 0
+    bytes_saved = 0
+    transactions = []
 
     for idx, file_path in enumerate(all_files, start=1):
+        try:
+            file_size = file_path.stat().st_size
+        except Exception:
+            file_size = 0
+
         match = FILENAME_PATTERN.match(file_path.stem)
         year_dir = target_dir / match.group('year') if match else None
-        metadata = get_folder_metadata(file_path, year_dir=year_dir)
+        subpath = get_destination_subpath(file_path, year_dir=year_dir)
         
-        if not metadata:
+        if not subpath:
             skipped += 1
             yield {
                 "type": "progress", "index": idx, "total": total_files,
-                "status": "SKIP", "file": file_path.name, "target": "Unmatched metadata format"
+                "status": "SKIP", "file": file_path.name, "target": "Unmatched metadata format",
+                "bytes_processed": bytes_processed, "bytes_saved": bytes_saved, "bytes_current": file_size
             }
             continue
 
-        year, month_folder, sub_folder = metadata
-        dest_folder = target_dir / year / month_folder / sub_folder
+        dest_folder = target_dir / subpath
         dest_path = dest_folder / file_path.name
-        rel_dest = f"{year}/{month_folder}/{sub_folder}/{dest_path.name}"
+        rel_dest = str(subpath / dest_path.name).replace("\\", "/")
 
         if not dry_run:
             dest_folder.mkdir(parents=True, exist_ok=True)
@@ -166,32 +230,43 @@ def process_media_stream(source_dir: Path, target_dir: Path, dry_run: bool = Fal
                 dest_hash = compute_sha256(dest_path)
                 if src_hash == dest_hash:
                     duplicates += 1
+                    bytes_saved += file_size
                     yield {
                         "type": "progress", "index": idx, "total": total_files,
-                        "status": "DUPLICATE", "file": file_path.name, "target": "Exact SHA-256 match (Skipped)"
+                        "status": "DUPLICATE", "file": file_path.name, "target": "Exact SHA-256 twin (Skipped)",
+                        "bytes_processed": bytes_processed, "bytes_saved": bytes_saved, "bytes_current": file_size
                     }
                     continue
                 else:
                     dest_path = resolve_unique_path(dest_folder, file_path.name)
-                    rel_dest = f"{year}/{month_folder}/{sub_folder}/{dest_path.name}"
+                    rel_dest = str(subpath / dest_path.name).replace("\\", "/")
                     conflicts += 1
-                    yield {
-                        "type": "progress", "index": idx, "total": total_files,
-                        "status": "CONFLICT", "file": file_path.name, "target": f"Auto-renamed -> {dest_path.name}"
-                    }
 
             action_fn(file_path, dest_path)
             processed += 1
+            bytes_processed += file_size
+
+            transactions.append({
+                "source_path": str(file_path),
+                "dest_path": str(dest_path)
+            })
+
             yield {
                 "type": "progress", "index": idx, "total": total_files,
-                "status": action_label.upper(), "file": file_path.name, "target": rel_dest
+                "status": action_label.upper(), "file": file_path.name, "target": rel_dest,
+                "bytes_processed": bytes_processed, "bytes_saved": bytes_saved, "bytes_current": file_size
             }
         else:
             processed += 1
+            bytes_processed += file_size
             yield {
                 "type": "progress", "index": idx, "total": total_files,
-                "status": "DRY-RUN", "file": file_path.name, "target": rel_dest
+                "status": "DRY-RUN", "file": file_path.name, "target": rel_dest,
+                "bytes_processed": bytes_processed, "bytes_saved": bytes_saved, "bytes_current": file_size
             }
+
+    if not dry_run and transactions:
+        save_transaction_history(transactions, copy_mode)
 
     yield {
         "type": "done",
@@ -199,6 +274,8 @@ def process_media_stream(source_dir: Path, target_dir: Path, dry_run: bool = Fal
             "processed": processed,
             "duplicates": duplicates,
             "conflicts": conflicts,
-            "skipped": skipped
+            "skipped": skipped,
+            "bytes_processed": bytes_processed,
+            "bytes_saved": bytes_saved
         }
     }
