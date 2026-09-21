@@ -1,6 +1,3 @@
-Here is the clean, updated `README.md` that accurately reflects the web dashboard, multi-device ingestion, and zero-manual-config setup of **v2.4.0**:
-
-```markdown
 # Project Time Capsule
 
 A local media ingestion pipeline and dashboard written in Python to organize raw photo dumps, camera RAWs, and screen recordings into a chronological archive.
